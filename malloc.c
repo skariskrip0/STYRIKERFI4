@@ -180,20 +180,27 @@ void *my_malloc(uint64_t size)
         return NULL;
     }
     
-    // Always try to extend if we get here
+    // Try to extend heap
     uint64_t new_size = _heapSize + HEAP_SIZE;
     uint8_t *new_heap = allocHeap(_heapStart, new_size);
     if (new_heap == NULL) {
         return NULL;
     }
     
-    Block *new_block = (Block*)(_heapStart + _heapSize);
-    new_block->size = HEAP_SIZE;
-    new_block->next = NULL;  // Changed this
-    _firstFreeBlock = new_block;  // Make this the only free block
+    // Create allocation block at start of new space
+    Block *alloc_block = (Block*)(_heapStart + _heapSize);
+    alloc_block->size = total_size;
+    alloc_block->next = ALLOCATED_BLOCK_MAGIC;
+    
+    // Create new free block for remaining space
+    Block *new_free = (Block*)((uint8_t*)alloc_block + total_size);
+    new_free->size = HEAP_SIZE - total_size;
+    new_free->next = _firstFreeBlock;
+    _firstFreeBlock = new_free;
+    
     _heapSize = new_size;
     
-    return allocate_block(&_firstFreeBlock, new_block, total_size);
+    return alloc_block->data;
 }
 
 
