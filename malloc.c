@@ -151,14 +151,13 @@ void *my_malloc(uint64_t size)
         return NULL;
     }
     
-    // Find best fit block
+    // Find best fit block and count total free space
     Block **update_ptr = &_firstFreeBlock;
     Block *best_block = NULL;
     Block **best_update = NULL;
     uint64_t best_size = UINT64_MAX;
     uint64_t total_free = 0;
     
-    // First pass: look for a suitable block and count total free space
     Block *current = _firstFreeBlock;
     while (current != NULL) {
         total_free += current->size;
@@ -176,28 +175,37 @@ void *my_malloc(uint64_t size)
         return allocate_block(best_update, best_block, total_size);
     }
     
-    // If we're here, we didn't find a suitable block
-    // Only check total_free if we're at the initial heap size
+    // If we're at initial heap size and don't have enough total free space, return NULL
     if (_heapSize == HEAP_SIZE && total_free < total_size) {
-        return NULL;  // Not enough space in initial heap
-    }
-    
-    // Try to extend heap
-    uint64_t new_size = _heapSize + HEAP_SIZE;
-    uint8_t *new_heap = allocHeap(_heapStart, new_size);
-    if (new_heap == NULL) {
         return NULL;
     }
     
-    // Create new free block at the end of current heap
-    Block *new_block = (Block*)(_heapStart + _heapSize);
-    new_block->size = HEAP_SIZE;
-    new_block->next = _firstFreeBlock;
-    _firstFreeBlock = new_block;
-    _heapSize = new_size;
+    // If we get here and the heap is full, try to extend it
+    if (total_free < total_size || best_block == NULL) {
+        uint64_t new_size = _heapSize + HEAP_SIZE;
+        uint8_t *new_heap = allocHeap(_heapStart, new_size);
+        if (new_heap == NULL) {
+            return NULL;
+        }
+        
+        // Create new free block
+        Block *new_block = (Block*)(_heapStart + _heapSize);
+        new_block->size = HEAP_SIZE;
+        new_block->next = _firstFreeBlock;
+        _firstFreeBlock = new_block;
+        _heapSize = new_size;
+        
+        // Try to allocate from the new space
+        best_block = new_block;
+        best_update = &_firstFreeBlock;
+    }
     
-    // Try allocation again with the new space
-    return my_malloc(size);
+    // If we have a block now, use it
+    if (best_block != NULL) {
+        return allocate_block(best_update, best_block, total_size);
+    }
+    
+    return NULL;
 }
 
 
