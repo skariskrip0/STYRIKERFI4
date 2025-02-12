@@ -1,4 +1,4 @@
-#define USE_REAL_SBRK 0 // 0 for fake malloc, 1 for real malloc	
+#define USE_REAL_SBRK 1 // 0 for fake malloc, 1 for real malloc	
 #pragma GCC diagnostic ignored "-Wunused-function"
 
 #if USE_REAL_SBRK
