@@ -173,6 +173,11 @@ void *my_malloc(uint64_t size)
         return allocate_block(best_update, best_block, total_size);
     }
     
+    // If the request is too large for initial heap, return NULL
+    if (_heapSize == HEAP_SIZE && total_size > HEAP_SIZE/2) {
+        return NULL;
+    }
+    
     // Try to extend heap
     uint64_t new_size = _heapSize + HEAP_SIZE;
     uint8_t *new_heap = allocHeap(_heapStart, new_size);
