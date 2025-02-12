@@ -146,9 +146,9 @@ void *my_malloc(uint64_t size)
     // Round up size to include header and alignment
     uint64_t total_size = roundUp(size + HEADER_SIZE);
     
-    // Check if the requested size is too large
-    if (total_size > HEAP_SIZE) {
-        return NULL; 
+    // Check if the requested size is too large for even an extended heap
+    if (total_size > HEAP_SIZE - HEADER_SIZE) {
+        return NULL;
     }
     
     // Find best fit block
@@ -166,10 +166,30 @@ void *my_malloc(uint64_t size)
         update_ptr = &(*update_ptr)->next;
     }
     
-    // If no suitable block found, return NULL
-    // We don't try to extend the heap if we can't find a block
+    // If no suitable block found, try to extend heap
     if (best_block == NULL) {
-        return NULL;
+        // Calculate new heap size
+        uint64_t new_size = _heapSize + HEAP_SIZE;
+        
+        // Try to extend the heap
+        uint8_t *new_heap = allocHeap(_heapStart, new_size);
+        if (new_heap == NULL) {
+            return NULL;
+        }
+        
+        // Create new free block at the end of current heap
+        Block *new_block = (Block*)(_heapStart + _heapSize);
+        new_block->size = HEAP_SIZE;
+        
+        // Insert the new block into the free list
+        new_block->next = _firstFreeBlock;
+        _firstFreeBlock = new_block;
+        
+        // Update heap size
+        _heapSize = new_size;
+        
+        // Try allocation again with the new block
+        return my_malloc(size);
     }
     
     return allocate_block(best_update, best_block, total_size);
