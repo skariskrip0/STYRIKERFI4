@@ -157,13 +157,24 @@ void *my_malloc(uint64_t size)
     Block **best_update = NULL;
     uint64_t best_size = UINT64_MAX;
     
-    while (*update_ptr != NULL) {
-        if ((*update_ptr)->size >= total_size && (*update_ptr)->size < best_size) {
-            best_block = *update_ptr;
+    // First, check if we have a suitable block in current heap
+    Block *current = _firstFreeBlock;
+    uint64_t total_free = 0;
+    while (current != NULL) {
+        total_free += current->size;
+        if (current->size >= total_size && current->size < best_size) {
+            best_block = current;
             best_update = update_ptr;
-            best_size = (*update_ptr)->size;
+            best_size = current->size;
         }
-        update_ptr = &(*update_ptr)->next;
+        update_ptr = &current->next;
+        current = current->next;
+    }
+    
+    // If we don't have a large enough contiguous block and the total free space
+    // is less than what we need, return NULL instead of extending
+    if (best_block == NULL && total_free < total_size) {
+        return NULL;
     }
     
     // If no suitable block found, try to extend heap
@@ -180,15 +191,10 @@ void *my_malloc(uint64_t size)
         // Create new free block at the end of current heap
         Block *new_block = (Block*)(_heapStart + _heapSize);
         new_block->size = HEAP_SIZE;
-        
-        // Insert the new block into the free list
         new_block->next = _firstFreeBlock;
         _firstFreeBlock = new_block;
-        
-        // Update heap size
         _heapSize = new_size;
         
-        // Try allocation again with the new block
         return my_malloc(size);
     }
     
