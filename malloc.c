@@ -146,6 +146,11 @@ void *my_malloc(uint64_t size)
     // Round up size to include header and alignment
     uint64_t total_size = roundUp(size + HEADER_SIZE);
     
+    // Check if the requested size is too large
+    if (total_size > HEAP_SIZE - HEADER_SIZE) {
+        return NULL;  // Request too large to ever be satisfied
+    }
+    
     // Find best fit block
     Block **update_ptr = &_firstFreeBlock;
     Block *best_block = NULL;
@@ -174,8 +179,14 @@ void *my_malloc(uint64_t size)
         _firstFreeBlock = new_block;
         _heapSize = new_size;
         
-        // Try allocation again
-        return my_malloc(size);
+        // Try allocation again, but only once
+        best_block = _firstFreeBlock;
+        best_update = &_firstFreeBlock;
+        
+        // Check if the new block is large enough
+        if (best_block->size < total_size) {
+            return NULL;
+        }
     }
     
     return allocate_block(best_update, best_block, total_size);
