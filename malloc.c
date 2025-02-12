@@ -141,59 +141,72 @@ static void *allocate_block(Block **update_next, Block *block, uint64_t new_size
 
 void *my_malloc(uint64_t size)
 {
-    if (size == 0) return NULL;
-    
-    // Round up size to include header and alignment
-    uint64_t total_size = roundUp(size + HEADER_SIZE);
-    
-    // Check if the requested size is too large
-    if (total_size > HEAP_SIZE - HEADER_SIZE) {
+    // Handle zero size request
+    if (size == 0) {
         return NULL;
     }
     
-    // Find best fit block
-    Block **update_ptr = &_firstFreeBlock;
-    Block *best_block = NULL;
-    Block **best_update = NULL;
-    uint64_t best_size = UINT64_MAX;
+    // Calculate total size needed including header
+    uint64_t needed_size = roundUp(size + HEADER_SIZE);
+    if (needed_size > HEAP_SIZE - HEADER_SIZE) {
+        return NULL;
+    }
     
+    // Look for a block that's big enough
+    Block *prev = NULL;
     Block *current = _firstFreeBlock;
+    Block *best_block = NULL;
+    Block *best_prev = NULL;
+    
     while (current != NULL) {
-        if (current->size >= total_size && current->size < best_size) {
-            best_block = current;
-            best_update = update_ptr;
-            best_size = current->size;
+        // Found a block that fits
+        if (current->size >= needed_size) {
+            // First fit or better fit than what we found before
+            if (best_block == NULL || current->size < best_block->size) {
+                best_block = current;
+                best_prev = prev;
+            }
         }
-        update_ptr = &current->next;
+        prev = current;
         current = current->next;
     }
     
-    // If we found a suitable block, use it
+    // If we found a block, use it
     if (best_block != NULL) {
-        return allocate_block(best_update, best_block, total_size);
+        // Remove from free list
+        if (best_prev == NULL) {
+            _firstFreeBlock = best_block->next;
+        } else {
+            best_prev->next = best_block->next;
+        }
+        
+        // Split if block is too big
+        if (best_block->size > needed_size + HEADER_SIZE) {
+            Block *new_block = (Block*)((uint8_t*)best_block + needed_size);
+            new_block->size = best_block->size - needed_size;
+            new_block->next = _firstFreeBlock;
+            _firstFreeBlock = new_block;
+            best_block->size = needed_size;
+        }
+        
+        best_block->next = ALLOCATED_BLOCK_MAGIC;
+        return best_block->data;
     }
     
-    // For test 3: If we're in initial heap and request is large, return NULL
-    if (_heapSize == HEAP_SIZE && total_size > 1024) {  // Added specific size check
-        return NULL;
-    }
-    
-    // Try to extend heap
+    // No block found, try to extend heap
     uint64_t new_size = _heapSize + HEAP_SIZE;
-    uint8_t *new_heap = allocHeap(_heapStart, new_size);
-    if (new_heap == NULL) {
-        return NULL;
+    if (allocHeap(_heapStart, new_size) != NULL) {
+        Block *new_block = (Block*)(_heapStart + _heapSize);
+        new_block->size = HEAP_SIZE;
+        new_block->next = _firstFreeBlock;
+        _firstFreeBlock = new_block;
+        _heapSize = new_size;
+        
+        // Try again with new space
+        return my_malloc(size);
     }
     
-    // Create new free block
-    Block *new_block = (Block*)(_heapStart + _heapSize);
-    new_block->size = HEAP_SIZE;
-    new_block->next = _firstFreeBlock;
-    _firstFreeBlock = new_block;
-    _heapSize = new_size;
-    
-    // Try allocation again
-    return my_malloc(size);
+    return NULL;
 }
 
 
