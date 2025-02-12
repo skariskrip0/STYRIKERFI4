@@ -175,28 +175,15 @@ void *my_malloc(uint64_t size)
         return allocate_block(best_update, best_block, total_size);
     }
     
-    // Only check total_free for initial heap size AND when we're not extending
-    if (_heapSize == HEAP_SIZE && total_free < total_size && best_block == NULL) {
-        // Try to extend heap first before giving up
-        uint64_t new_size = _heapSize + HEAP_SIZE;
-        uint8_t *new_heap = allocHeap(_heapStart, new_size);
-        if (new_heap == NULL) {
-            return NULL;
-        }
-        
-        // Create new free block
-        Block *new_block = (Block*)(_heapStart + _heapSize);
-        new_block->size = HEAP_SIZE;
-        new_block->next = _firstFreeBlock;
-        _firstFreeBlock = new_block;
-        _heapSize = new_size;
-        
-        // Try allocation again
-        return my_malloc(size);
+    // For initial heap size: if total free space is less than needed, return NULL
+    if (_heapSize == HEAP_SIZE && total_free < total_size) {
+        return NULL;
     }
     
-    // If we're here and still no suitable block, try extending
-    if (best_block == NULL) {
+    // Only try to extend if we're either:
+    // 1. Beyond initial heap size, or
+    // 2. At initial heap size but have enough total free space (just fragmented)
+    if (_heapSize > HEAP_SIZE || (_heapSize == HEAP_SIZE && total_free >= total_size)) {
         uint64_t new_size = _heapSize + HEAP_SIZE;
         uint8_t *new_heap = allocHeap(_heapStart, new_size);
         if (new_heap == NULL) {
@@ -210,7 +197,6 @@ void *my_malloc(uint64_t size)
         _firstFreeBlock = new_block;
         _heapSize = new_size;
         
-        // Try allocation again
         return my_malloc(size);
     }
     
