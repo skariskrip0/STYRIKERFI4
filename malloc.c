@@ -146,21 +146,19 @@ void *my_malloc(uint64_t size)
     // Round up size to include header and alignment
     uint64_t total_size = roundUp(size + HEADER_SIZE);
     
-    // Check if the requested size is too large for even an extended heap
+    // Check if the requested size is too large
     if (total_size > HEAP_SIZE - HEADER_SIZE) {
         return NULL;
     }
     
-    // Find best fit block and count total free space
+    // Find best fit block
     Block **update_ptr = &_firstFreeBlock;
     Block *best_block = NULL;
     Block **best_update = NULL;
     uint64_t best_size = UINT64_MAX;
-    uint64_t total_free = 0;
     
     Block *current = _firstFreeBlock;
     while (current != NULL) {
-        total_free += current->size;
         if (current->size >= total_size && current->size < best_size) {
             best_block = current;
             best_update = update_ptr;
@@ -175,32 +173,27 @@ void *my_malloc(uint64_t size)
         return allocate_block(best_update, best_block, total_size);
     }
     
-    // For initial heap size: if total free space is less than needed, return NULL
-    if (_heapSize == HEAP_SIZE && total_free < total_size) {
+    // If we're still in initial heap, return NULL
+    if (_heapSize == HEAP_SIZE) {
         return NULL;
     }
     
-    // Only try to extend if we're either:
-    // 1. Beyond initial heap size, or
-    // 2. At initial heap size but have enough total free space (just fragmented)
-    if (_heapSize > HEAP_SIZE || (_heapSize == HEAP_SIZE && total_free >= total_size)) {
-        uint64_t new_size = _heapSize + HEAP_SIZE;
-        uint8_t *new_heap = allocHeap(_heapStart, new_size);
-        if (new_heap == NULL) {
-            return NULL;
-        }
-        
-        // Create new free block
-        Block *new_block = (Block*)(_heapStart + _heapSize);
-        new_block->size = HEAP_SIZE;
-        new_block->next = _firstFreeBlock;
-        _firstFreeBlock = new_block;
-        _heapSize = new_size;
-        
-        return my_malloc(size);
+    // Try to extend heap
+    uint64_t new_size = _heapSize + HEAP_SIZE;
+    uint8_t *new_heap = allocHeap(_heapStart, new_size);
+    if (new_heap == NULL) {
+        return NULL;
     }
     
-    return NULL;
+    // Create new free block
+    Block *new_block = (Block*)(_heapStart + _heapSize);
+    new_block->size = HEAP_SIZE;
+    new_block->next = _firstFreeBlock;
+    _firstFreeBlock = new_block;
+    _heapSize = new_size;
+    
+    // Try allocation again
+    return my_malloc(size);
 }
 
 
