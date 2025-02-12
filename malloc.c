@@ -156,10 +156,10 @@ void *my_malloc(uint64_t size)
     Block *best_block = NULL;
     Block **best_update = NULL;
     uint64_t best_size = UINT64_MAX;
-    
-    // First, check if we have a suitable block in current heap
-    Block *current = _firstFreeBlock;
     uint64_t total_free = 0;
+    
+    // First pass: look for a suitable block and count total free space
+    Block *current = _firstFreeBlock;
     while (current != NULL) {
         total_free += current->size;
         if (current->size >= total_size && current->size < best_size) {
@@ -171,34 +171,33 @@ void *my_malloc(uint64_t size)
         current = current->next;
     }
     
-    // If we don't have a large enough contiguous block and the total free space
-    // is less than what we need, return NULL instead of extending
-    if (best_block == NULL && total_free < total_size) {
+    // If we found a suitable block, use it
+    if (best_block != NULL) {
+        return allocate_block(best_update, best_block, total_size);
+    }
+    
+    // If we're here, we didn't find a suitable block
+    // Only check total_free if we're at the initial heap size
+    if (_heapSize == HEAP_SIZE && total_free < total_size) {
+        return NULL;  // Not enough space in initial heap
+    }
+    
+    // Try to extend heap
+    uint64_t new_size = _heapSize + HEAP_SIZE;
+    uint8_t *new_heap = allocHeap(_heapStart, new_size);
+    if (new_heap == NULL) {
         return NULL;
     }
     
-    // If no suitable block found, try to extend heap
-    if (best_block == NULL) {
-        // Calculate new heap size
-        uint64_t new_size = _heapSize + HEAP_SIZE;
-        
-        // Try to extend the heap
-        uint8_t *new_heap = allocHeap(_heapStart, new_size);
-        if (new_heap == NULL) {
-            return NULL;
-        }
-        
-        // Create new free block at the end of current heap
-        Block *new_block = (Block*)(_heapStart + _heapSize);
-        new_block->size = HEAP_SIZE;
-        new_block->next = _firstFreeBlock;
-        _firstFreeBlock = new_block;
-        _heapSize = new_size;
-        
-        return my_malloc(size);
-    }
+    // Create new free block at the end of current heap
+    Block *new_block = (Block*)(_heapStart + _heapSize);
+    new_block->size = HEAP_SIZE;
+    new_block->next = _firstFreeBlock;
+    _firstFreeBlock = new_block;
+    _heapSize = new_size;
     
-    return allocate_block(best_update, best_block, total_size);
+    // Try allocation again with the new space
+    return my_malloc(size);
 }
 
 
