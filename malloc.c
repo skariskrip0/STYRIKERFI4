@@ -175,33 +175,27 @@ void *my_malloc(uint64_t size)
         return allocate_block(best_update, best_block, total_size);
     }
     
-    // If we're at initial heap size and don't have enough total free space
-    // or if we need to extend the heap
-    if (best_block == NULL) {
-        // Only return NULL if we're at initial heap and don't have enough total space
-        if (_heapSize == HEAP_SIZE && total_free < total_size) {
-            return NULL;
-        }
-        
-        // Try to extend heap
-        uint64_t new_size = _heapSize + HEAP_SIZE;
-        uint8_t *new_heap = allocHeap(_heapStart, new_size);
-        if (new_heap == NULL) {
-            return NULL;
-        }
-        
-        // Create new free block
-        Block *new_block = (Block*)(_heapStart + _heapSize);
-        new_block->size = HEAP_SIZE;
-        new_block->next = _firstFreeBlock;
-        _firstFreeBlock = new_block;
-        _heapSize = new_size;
-        
-        // Try allocation with the new block
-        return allocate_block(&_firstFreeBlock, new_block, total_size);
+    // If we're at initial heap size and don't have enough total space, return NULL
+    if (_heapSize == HEAP_SIZE && total_free < total_size) {
+        return NULL;
     }
     
-    return NULL;
+    // Try to extend heap
+    uint64_t new_size = _heapSize + HEAP_SIZE;
+    uint8_t *new_heap = allocHeap(_heapStart, new_size);
+    if (new_heap == NULL) {
+        return NULL;
+    }
+    
+    // Create new free block
+    Block *new_block = (Block*)(_heapStart + _heapSize);
+    new_block->size = HEAP_SIZE;
+    new_block->next = _firstFreeBlock;
+    _firstFreeBlock = new_block;
+    _heapSize = new_size;
+    
+    // Key change: Recursive call after extension
+    return my_malloc(size);
 }
 
 
