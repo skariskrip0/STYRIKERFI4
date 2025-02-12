@@ -175,32 +175,46 @@ void *my_malloc(uint64_t size)
         return allocate_block(best_update, best_block, total_size);
     }
     
-    // Only check total_free for initial heap size
-    if (_heapSize == HEAP_SIZE && total_free < total_size) {
-        return NULL;
+    // Only check total_free for initial heap size AND when we're not extending
+    if (_heapSize == HEAP_SIZE && total_free < total_size && best_block == NULL) {
+        // Try to extend heap first before giving up
+        uint64_t new_size = _heapSize + HEAP_SIZE;
+        uint8_t *new_heap = allocHeap(_heapStart, new_size);
+        if (new_heap == NULL) {
+            return NULL;
+        }
+        
+        // Create new free block
+        Block *new_block = (Block*)(_heapStart + _heapSize);
+        new_block->size = HEAP_SIZE;
+        new_block->next = _firstFreeBlock;
+        _firstFreeBlock = new_block;
+        _heapSize = new_size;
+        
+        // Try allocation again
+        return my_malloc(size);
     }
     
-    // Try to extend heap
-    uint64_t new_size = _heapSize + HEAP_SIZE;
-    uint8_t *new_heap = allocHeap(_heapStart, new_size);
-    if (new_heap == NULL) {
-        return NULL;
+    // If we're here and still no suitable block, try extending
+    if (best_block == NULL) {
+        uint64_t new_size = _heapSize + HEAP_SIZE;
+        uint8_t *new_heap = allocHeap(_heapStart, new_size);
+        if (new_heap == NULL) {
+            return NULL;
+        }
+        
+        // Create new free block
+        Block *new_block = (Block*)(_heapStart + _heapSize);
+        new_block->size = HEAP_SIZE;
+        new_block->next = _firstFreeBlock;
+        _firstFreeBlock = new_block;
+        _heapSize = new_size;
+        
+        // Try allocation again
+        return my_malloc(size);
     }
     
-    // Create allocation block at start of new space
-    Block *alloc_block = (Block*)(_heapStart + _heapSize);
-    alloc_block->size = total_size;
-    alloc_block->next = ALLOCATED_BLOCK_MAGIC;
-    
-    // Create new free block for remaining space
-    Block *new_free = (Block*)((uint8_t*)alloc_block + total_size);
-    new_free->size = HEAP_SIZE - total_size;
-    new_free->next = _firstFreeBlock;
-    _firstFreeBlock = new_free;
-    
-    _heapSize = new_size;
-    
-    return alloc_block->data;
+    return NULL;
 }
 
 
