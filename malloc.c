@@ -1,4 +1,4 @@
-#define USE_REAL_SBRK 1 // 0 for fake malloc, 1 for real malloc	
+#define USE_REAL_SBRK 1
 #pragma GCC diagnostic ignored "-Wunused-function"
 
 #if USE_REAL_SBRK
@@ -118,7 +118,7 @@ uint64_t roundUp(uint64_t n)
 }
 
 /* Helper function that allocates a block 
- * takes as first argument the address of the next pointer that needs to be updated (!)
+ * takes as first argument the address of the next pointer that needs to be updated
  */
 static void *allocate_block(Block **update_next, Block *block, uint64_t new_size)
 {
@@ -139,45 +139,107 @@ static void *allocate_block(Block **update_next, Block *block, uint64_t new_size
     return block->data;
 }
 
-void *my_malloc(uint64_t size)
-{
-    // Handle zero size request
-    if (size == 0) {
-        return NULL;
+// Add at the top with other globals
+static AllocType _currentStrategy = ALLOC_BESTFIT;
+static Block *_lastAllocatedBlock = NULL;  // For next-fit strategy
+
+void setAllocationStrategy(AllocType type) {
+    _currentStrategy = type;
+    _lastAllocatedBlock = NULL;  // Reset last allocation point
+}
+
+/*
+ * Helper function that finds a suitable block based on current allocation strategy.
+ * Returns the found block and sets prev_out to its previous block.
+ */
+static Block* find_block(uint64_t needed_size, Block **prev_out) {
+    Block *prev = NULL;
+    Block *current = _firstFreeBlock;
+    Block *best_block = NULL;
+    Block *best_prev = NULL;
+    uint64_t best_size = UINT64_MAX;
+    uint64_t worst_size = 0;
+    
+    if (_currentStrategy == ALLOC_NEXTFIT && _lastAllocatedBlock != NULL) {
+        current = _lastAllocatedBlock->next;
+        Block *temp = _firstFreeBlock;
+        while (temp != NULL && temp != current) {
+            prev = temp;
+            temp = temp->next;
+        }
     }
     
-    // Calculate total size needed including header
+    Block *start_block = current;  // Remember where we started for next-fit
+    bool wrapped = false;          // For next-fit to avoid infinite loop
+    
+    do {
+        if (current == NULL) {
+            if (_currentStrategy == ALLOC_NEXTFIT && !wrapped) {
+                current = _firstFreeBlock;
+                prev = NULL;
+                wrapped = true;
+                continue;
+            }
+            break;
+        }
+        
+        if (current->size >= needed_size) {
+            switch (_currentStrategy) {
+                case ALLOC_FIRSTFIT:
+                    *prev_out = prev;
+                    return current;
+                
+                case ALLOC_NEXTFIT:
+                    *prev_out = prev;
+                    _lastAllocatedBlock = current;
+                    return current;
+                
+                case ALLOC_BESTFIT:
+                    if (current->size < best_size) {
+                        best_block = current;
+                        best_prev = prev;
+                        best_size = current->size;
+                    }
+                    break;
+                
+                case ALLOC_WORSTFIT:
+                    if (current->size > worst_size) {
+                        best_block = current;
+                        best_prev = prev;
+                        worst_size = current->size;
+                    }
+                    break;
+            }
+        }
+        
+        prev = current;
+        current = current->next;
+        
+    } while (_currentStrategy == ALLOC_NEXTFIT && 
+             (current != start_block || !wrapped));
+    
+    *prev_out = best_prev;
+    return best_block;
+}
+
+void *my_malloc(uint64_t size)
+{
+    if (size == 0) return NULL;
+    
     uint64_t needed_size = roundUp(size + HEADER_SIZE);
     if (needed_size > HEAP_SIZE - HEADER_SIZE) {
         return NULL;
     }
     
-    // Look for a block that's big enough
     Block *prev = NULL;
-    Block *current = _firstFreeBlock;
-    Block *best_block = NULL;
-    Block *best_prev = NULL;
+    Block *best_block = find_block(needed_size, &prev);
     
-    while (current != NULL) {
-        // Found a block that fits
-        if (current->size >= needed_size) {
-            // First fit or better fit than what we found before
-            if (best_block == NULL || current->size < best_block->size) {
-                best_block = current;
-                best_prev = prev;
-            }
-        }
-        prev = current;
-        current = current->next;
-    }
-    
-    // If we found a block, use it
     if (best_block != NULL) {
         // Remove from free list
-        if (best_prev == NULL) {
+        if (prev == NULL) {
             _firstFreeBlock = best_block->next;
         } else {
-            best_prev->next = best_block->next;
+            prev->next = best_block->next;
         }
         
         // Split if block is too big
@@ -193,7 +255,7 @@ void *my_malloc(uint64_t size)
         return best_block->data;
     }
     
-    // No block found, try to extend heap
+    // Try to extend heap
     uint64_t new_size = _heapSize + HEAP_SIZE;
     if (allocHeap(_heapStart, new_size) != NULL) {
         Block *new_block = (Block*)(_heapStart + _heapSize);
@@ -201,8 +263,6 @@ void *my_malloc(uint64_t size)
         new_block->next = _firstFreeBlock;
         _firstFreeBlock = new_block;
         _heapSize = new_size;
-        
-        // Try again with new space
         return my_malloc(size);
     }
     
@@ -248,6 +308,10 @@ void my_free(void *address)
     // Try to merge with next block
     Block *next_block = _getNextBlockBySize(block);
     if (next_block && next_block->next != ALLOCATED_BLOCK_MAGIC) {
+        if (_lastAllocatedBlock == next_block) {
+            _lastAllocatedBlock = block;
+        }
+        
         Block **next_ptr = &block->next;
         while (*next_ptr != next_block) {
             next_ptr = &(*next_ptr)->next;
@@ -262,6 +326,10 @@ void my_free(void *address)
     while (prev_block != block) {
         Block *next = _getNextBlockBySize(prev_block);
         if (next == block && prev_block->next != ALLOCATED_BLOCK_MAGIC) {
+            if (_lastAllocatedBlock == block) {
+                _lastAllocatedBlock = prev_block;
+            }
+            
             prev_block->size += block->size;
             prev_block->next = block->next;
             return;
@@ -269,6 +337,34 @@ void my_free(void *address)
         prev_ptr = &prev_block->next;
         prev_block = *prev_ptr;
     }
+}
+
+MallocStat getAllocStatistics() {
+    MallocStat stats = {0, 0, 0};  // Initialize all fields to 0
+    uint64_t total_free = 0;
+    
+    // Traverse free list to gather statistics
+    Block *current = _firstFreeBlock;
+    while (current != NULL) {
+        stats.nFree++;
+        
+        // Add to total free space
+        total_free += current->size;
+        
+        // Update largest free block if needed
+        if (current->size > stats.largestFree) {
+            stats.largestFree = current->size;
+        }
+        
+        current = current->next;
+    }
+    
+    // Calculate average (if there are free blocks)
+    if (stats.nFree > 0) {
+        stats.avgFree = total_free / stats.nFree;
+    }
+    
+    return stats;
 }
 
 
