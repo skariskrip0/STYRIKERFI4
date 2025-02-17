@@ -163,17 +163,16 @@ static Block* find_block(uint64_t needed_size, Block **prev_out) {
     
     // For next-fit, start from last allocated position
     if (_currentStrategy == ALLOC_NEXTFIT && _lastAllocatedBlock != NULL) {
-        // Find block after _lastAllocatedBlock in the free list
-        while (current != NULL) {
-            if (_getNextBlockBySize(_lastAllocatedBlock) == current) {
-                break;
-            }
+        // Find the block after _lastAllocatedBlock in the free list
+        while (current != NULL && current != _lastAllocatedBlock) {
             prev = current;
             current = current->next;
         }
-        
-        // If not found, start from beginning
-        if (current == NULL) {
+        // Start from next block or beginning if not found
+        if (current != NULL) {
+            prev = current;
+            current = current->next;
+        } else {
             current = _firstFreeBlock;
             prev = NULL;
         }
@@ -298,25 +297,30 @@ void my_free(void *address)
 {
     if (address == NULL) return;
     
+    // Get block header from data pointer
     Block *block = (Block*)((uint8_t*)address - HEADER_SIZE);
+    
+    // Verify this is an allocated block
     if (block->next != ALLOCATED_BLOCK_MAGIC) return;
     
-    // For next-fit: if freeing the last allocated block, move to next
-    if (_currentStrategy == ALLOC_NEXTFIT && block == _lastAllocatedBlock) {
-        _lastAllocatedBlock = NULL;  // Reset to start of list on next allocation
-    }
-    
-    // Insert into free list maintaining address order
+    // Find where to insert in free list (keeping address order)
     Block **insert_ptr = &_firstFreeBlock;
     while (*insert_ptr != NULL && *insert_ptr < block) {
         insert_ptr = &(*insert_ptr)->next;
     }
+    
+    // Insert block into free list
     block->next = *insert_ptr;
     *insert_ptr = block;
     
     // Try to merge with next block
     Block *next_block = _getNextBlockBySize(block);
     if (next_block && next_block->next != ALLOCATED_BLOCK_MAGIC) {
+        // Update _lastAllocatedBlock if it points to the block being merged
+        if (_lastAllocatedBlock == next_block) {
+            _lastAllocatedBlock = block;  // Point to the merged block
+        }
+        
         Block **next_ptr = &block->next;
         while (*next_ptr != next_block) {
             next_ptr = &(*next_ptr)->next;
@@ -327,14 +331,21 @@ void my_free(void *address)
     
     // Try to merge with previous block
     Block *prev_block = _firstFreeBlock;
+    Block **prev_ptr = &_firstFreeBlock;
     while (prev_block != block) {
         Block *next = _getNextBlockBySize(prev_block);
         if (next == block && prev_block->next != ALLOCATED_BLOCK_MAGIC) {
+            // Update _lastAllocatedBlock if it points to the block being merged
+            if (_lastAllocatedBlock == block) {
+                _lastAllocatedBlock = prev_block;  // Point to the start of merged block
+            }
+            
             prev_block->size += block->size;
             prev_block->next = block->next;
             return;
         }
-        prev_block = prev_block->next;
+        prev_ptr = &prev_block->next;
+        prev_block = *prev_ptr;
     }
 }
 
