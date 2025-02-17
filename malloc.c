@@ -161,24 +161,32 @@ static Block* find_block(uint64_t needed_size, Block **prev_out) {
     uint64_t best_size = UINT64_MAX;
     uint64_t worst_size = 0;
     
+    // For next-fit, start from last allocated position
     if (_currentStrategy == ALLOC_NEXTFIT && _lastAllocatedBlock != NULL) {
-        current = _lastAllocatedBlock->next;
-        Block *temp = _firstFreeBlock;
-        while (temp != NULL && temp != current) {
-            prev = temp;
-            temp = temp->next;
+        // Find the block after _lastAllocatedBlock in the free list
+        while (current != NULL && current != _lastAllocatedBlock) {
+            prev = current;
+            current = current->next;
+        }
+        if (current != NULL) {
+            current = current->next;  // Start from the next block
+        } else {
+            // If we didn't find last block, start from beginning
+            current = _firstFreeBlock;
+            prev = NULL;
         }
     }
     
-    Block *start_block = current;  // Remember where we started for next-fit
-    bool wrapped = false;          // For next-fit to avoid infinite loop
+    // Remember starting point for next-fit
+    Block *start = current;
+    int wrapped = 0;
     
     do {
         if (current == NULL) {
             if (_currentStrategy == ALLOC_NEXTFIT && !wrapped) {
                 current = _firstFreeBlock;
                 prev = NULL;
-                wrapped = true;
+                wrapped = 1;
                 continue;
             }
             break;
@@ -217,7 +225,7 @@ static Block* find_block(uint64_t needed_size, Block **prev_out) {
         current = current->next;
         
     } while (_currentStrategy == ALLOC_NEXTFIT && 
-             (current != start_block || !wrapped));
+             (current != start || !wrapped));
     
     *prev_out = best_prev;
     return best_block;
