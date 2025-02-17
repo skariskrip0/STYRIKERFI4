@@ -163,27 +163,18 @@ static Block* find_block(uint64_t needed_size, Block **prev_out) {
     
     // For next-fit, start from last allocated position
     if (_currentStrategy == ALLOC_NEXTFIT && _lastAllocatedBlock != NULL) {
-        // Find the block after _lastAllocatedBlock in the free list
-        Block *next_physical = _getNextBlockBySize(_lastAllocatedBlock);
-        while (current != NULL && current != next_physical) {
+        // Find the block after _lastAllocatedBlock
+        while (current != NULL && current != _lastAllocatedBlock) {
             prev = current;
             current = current->next;
         }
-        // If not found, try _lastAllocatedBlock itself
-        if (current == NULL) {
+        // Start from next block or beginning if not found
+        if (current != NULL) {
+            prev = current;
+            current = current->next;
+        } else {
             current = _firstFreeBlock;
             prev = NULL;
-            while (current != NULL && current != _lastAllocatedBlock) {
-                prev = current;
-                current = current->next;
-            }
-            if (current != NULL) {
-                prev = current;
-                current = current->next;
-            } else {
-                current = _firstFreeBlock;
-                prev = NULL;
-            }
         }
     }
     
@@ -204,10 +195,12 @@ static Block* find_block(uint64_t needed_size, Block **prev_out) {
         if (current->size >= needed_size) {
             switch (_currentStrategy) {
                 case ALLOC_FIRSTFIT:
+                    // Return immediately for first fit
                     *prev_out = prev;
                     return current;
                 
                 case ALLOC_NEXTFIT:
+                    // Return immediately for next fit
                     *prev_out = prev;
                     _lastAllocatedBlock = current;
                     return current;
@@ -306,21 +299,24 @@ void my_free(void *address)
 {
     if (address == NULL) return;
     
+    // Get block header from data pointer
     Block *block = (Block*)((uint8_t*)address - HEADER_SIZE);
+    
+    // Verify this is an allocated block
     if (block->next != ALLOCATED_BLOCK_MAGIC) return;
     
-    // For next-fit: if freeing the last allocated block, move to next
-    if (_currentStrategy == ALLOC_NEXTFIT && block == _lastAllocatedBlock) {
-        _lastAllocatedBlock = NULL;  // Reset to start of list on next allocation
-    }
-    
-    // Insert into free list maintaining address order
+    // Find where to insert in free list (keeping address order)
     Block **insert_ptr = &_firstFreeBlock;
     while (*insert_ptr != NULL && *insert_ptr < block) {
         insert_ptr = &(*insert_ptr)->next;
     }
+    
+    // Insert block into free list
     block->next = *insert_ptr;
     *insert_ptr = block;
+    
+    // Remember original block for next-fit
+    Block *original_block = block;
     
     // Try to merge with next block
     Block *next_block = _getNextBlockBySize(block);
@@ -335,14 +331,28 @@ void my_free(void *address)
     
     // Try to merge with previous block
     Block *prev_block = _firstFreeBlock;
+    Block **prev_ptr = &_firstFreeBlock;
     while (prev_block != block) {
         Block *next = _getNextBlockBySize(prev_block);
         if (next == block && prev_block->next != ALLOCATED_BLOCK_MAGIC) {
             prev_block->size += block->size;
             prev_block->next = block->next;
+            
+            // For next-fit: if we merged blocks, update last allocated
+            if (_currentStrategy == ALLOC_NEXTFIT && 
+                (_lastAllocatedBlock == block || _lastAllocatedBlock == next_block)) {
+                _lastAllocatedBlock = original_block;
+            }
             return;
         }
-        prev_block = prev_block->next;
+        prev_ptr = &prev_block->next;
+        prev_block = *prev_ptr;
+    }
+    
+    // If we didn't merge with previous, check if we need to update last allocated
+    if (_currentStrategy == ALLOC_NEXTFIT && 
+        (_lastAllocatedBlock == block || _lastAllocatedBlock == next_block)) {
+        _lastAllocatedBlock = original_block;
     }
 }
 
