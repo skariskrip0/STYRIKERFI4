@@ -318,8 +318,9 @@ void my_free(void *address)
     // Try to merge with next block
     Block *next_block = _getNextBlockBySize(block);
     if (next_block && next_block->next != ALLOCATED_BLOCK_MAGIC) {
+        // Update _lastAllocatedBlock if it points to the block being merged
         if (_lastAllocatedBlock == next_block) {
-            _lastAllocatedBlock = block;
+            _lastAllocatedBlock = block;  // Point to the merged block
         }
         
         Block **next_ptr = &block->next;
@@ -336,8 +337,9 @@ void my_free(void *address)
     while (prev_block != block) {
         Block *next = _getNextBlockBySize(prev_block);
         if (next == block && prev_block->next != ALLOCATED_BLOCK_MAGIC) {
+            // Update _lastAllocatedBlock if it points to the block being merged
             if (_lastAllocatedBlock == block) {
-                _lastAllocatedBlock = prev_block;
+                _lastAllocatedBlock = prev_block;  // Point to the start of merged block
             }
             
             prev_block->size += block->size;
