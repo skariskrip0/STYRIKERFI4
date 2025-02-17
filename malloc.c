@@ -297,28 +297,28 @@ void my_free(void *address)
 {
     if (address == NULL) return;
     
-    // Get block header from data pointer
     Block *block = (Block*)((uint8_t*)address - HEADER_SIZE);
-    
-    // Verify this is an allocated block
     if (block->next != ALLOCATED_BLOCK_MAGIC) return;
+    
+    // For next-fit: if we're freeing the last allocated block
+    if (_currentStrategy == ALLOC_NEXTFIT && block == _lastAllocatedBlock) {
+        Block *next = _getNextBlockBySize(block);
+        _lastAllocatedBlock = next;  // Move to next physical block
+    }
     
     // Find where to insert in free list (keeping address order)
     Block **insert_ptr = &_firstFreeBlock;
     while (*insert_ptr != NULL && *insert_ptr < block) {
         insert_ptr = &(*insert_ptr)->next;
     }
-    
-    // Insert block into free list
     block->next = *insert_ptr;
     *insert_ptr = block;
     
     // Try to merge with next block
     Block *next_block = _getNextBlockBySize(block);
     if (next_block && next_block->next != ALLOCATED_BLOCK_MAGIC) {
-        // Update _lastAllocatedBlock if it points to the block being merged
-        if (_lastAllocatedBlock == next_block) {
-            _lastAllocatedBlock = block;  // Point to the merged block
+        if (_currentStrategy == ALLOC_NEXTFIT && _lastAllocatedBlock == next_block) {
+            _lastAllocatedBlock = _getNextBlockBySize(next_block);  // Skip over merged block
         }
         
         Block **next_ptr = &block->next;
@@ -335,9 +335,8 @@ void my_free(void *address)
     while (prev_block != block) {
         Block *next = _getNextBlockBySize(prev_block);
         if (next == block && prev_block->next != ALLOCATED_BLOCK_MAGIC) {
-            // Update _lastAllocatedBlock if it points to the block being merged
-            if (_lastAllocatedBlock == block) {
-                _lastAllocatedBlock = prev_block;  // Point to the start of merged block
+            if (_currentStrategy == ALLOC_NEXTFIT && _lastAllocatedBlock == block) {
+                _lastAllocatedBlock = _getNextBlockBySize(block);  // Skip over merged block
             }
             
             prev_block->size += block->size;
