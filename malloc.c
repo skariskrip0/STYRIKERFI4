@@ -299,30 +299,25 @@ void my_free(void *address)
 {
     if (address == NULL) return;
     
-    // Get block header from data pointer
     Block *block = (Block*)((uint8_t*)address - HEADER_SIZE);
-    
-    // Verify this is an allocated block
     if (block->next != ALLOCATED_BLOCK_MAGIC) return;
     
-    // Find where to insert in free list (keeping address order)
+    // For next-fit: if freeing the last allocated block, move to next
+    if (_currentStrategy == ALLOC_NEXTFIT && block == _lastAllocatedBlock) {
+        _lastAllocatedBlock = NULL;  // Reset to start of list on next allocation
+    }
+    
+    // Insert into free list maintaining address order
     Block **insert_ptr = &_firstFreeBlock;
     while (*insert_ptr != NULL && *insert_ptr < block) {
         insert_ptr = &(*insert_ptr)->next;
     }
-    
-    // Insert block into free list
     block->next = *insert_ptr;
     *insert_ptr = block;
     
     // Try to merge with next block
     Block *next_block = _getNextBlockBySize(block);
     if (next_block && next_block->next != ALLOCATED_BLOCK_MAGIC) {
-        // Update _lastAllocatedBlock if it points to the block being merged
-        if (_lastAllocatedBlock == next_block) {
-            _lastAllocatedBlock = block;  // Point to the merged block
-        }
-        
         Block **next_ptr = &block->next;
         while (*next_ptr != next_block) {
             next_ptr = &(*next_ptr)->next;
@@ -333,21 +328,14 @@ void my_free(void *address)
     
     // Try to merge with previous block
     Block *prev_block = _firstFreeBlock;
-    Block **prev_ptr = &_firstFreeBlock;
     while (prev_block != block) {
         Block *next = _getNextBlockBySize(prev_block);
         if (next == block && prev_block->next != ALLOCATED_BLOCK_MAGIC) {
-            // Update _lastAllocatedBlock if it points to the block being merged
-            if (_lastAllocatedBlock == block) {
-                _lastAllocatedBlock = prev_block;  // Point to the start of merged block
-            }
-            
             prev_block->size += block->size;
             prev_block->next = block->next;
             return;
         }
-        prev_ptr = &prev_block->next;
-        prev_block = *prev_ptr;
+        prev_block = prev_block->next;
     }
 }
 
