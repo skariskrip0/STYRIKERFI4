@@ -302,9 +302,8 @@ void my_free(void *address)
     Block *block = (Block*)((uint8_t*)address - HEADER_SIZE);
     if (block->next != ALLOCATED_BLOCK_MAGIC) return;
     
-    // Remember original block and its neighbors for next-fit
+    // Remember original block for next-fit
     Block *original_block = block;
-    Block *original_next = _getNextBlockBySize(block);
     
     // First, check if we can merge with next block
     Block *next_block = _getNextBlockBySize(block);
@@ -344,12 +343,10 @@ void my_free(void *address)
     }
     
     // Update _lastAllocatedBlock for next-fit
-    if (_currentStrategy == ALLOC_NEXTFIT) {
-        if (_lastAllocatedBlock == original_block) {
-            _lastAllocatedBlock = original_next;  // Point to where the original block ended
-        } else if (_lastAllocatedBlock == next_block) {
-            _lastAllocatedBlock = original_block;  // Point back to start of merged region
-        }
+    if (_currentStrategy == ALLOC_NEXTFIT && 
+        (_lastAllocatedBlock == original_block || 
+         _lastAllocatedBlock == next_block)) {
+        _lastAllocatedBlock = block;
     }
 }
 
