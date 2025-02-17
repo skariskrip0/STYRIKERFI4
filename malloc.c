@@ -163,16 +163,17 @@ static Block* find_block(uint64_t needed_size, Block **prev_out) {
     
     // For next-fit, start from last allocated position
     if (_currentStrategy == ALLOC_NEXTFIT && _lastAllocatedBlock != NULL) {
-        // Find the block after _lastAllocatedBlock
-        while (current != NULL && current != _lastAllocatedBlock) {
+        // Find block after _lastAllocatedBlock in the free list
+        while (current != NULL) {
+            if (_getNextBlockBySize(_lastAllocatedBlock) == current) {
+                break;
+            }
             prev = current;
             current = current->next;
         }
-        // Start from next block or beginning if not found
-        if (current != NULL) {
-            prev = current;
-            current = current->next;
-        } else {
+        
+        // If not found, start from beginning
+        if (current == NULL) {
             current = _firstFreeBlock;
             prev = NULL;
         }
@@ -195,12 +196,10 @@ static Block* find_block(uint64_t needed_size, Block **prev_out) {
         if (current->size >= needed_size) {
             switch (_currentStrategy) {
                 case ALLOC_FIRSTFIT:
-                    // Return immediately for first fit
                     *prev_out = prev;
                     return current;
                 
                 case ALLOC_NEXTFIT:
-                    // Return immediately for next fit
                     *prev_out = prev;
                     _lastAllocatedBlock = current;
                     return current;
