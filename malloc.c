@@ -299,60 +299,54 @@ void my_free(void *address)
 {
     if (address == NULL) return;
     
-    // Get block header from data pointer
     Block *block = (Block*)((uint8_t*)address - HEADER_SIZE);
-    
-    // Verify this is an allocated block
     if (block->next != ALLOCATED_BLOCK_MAGIC) return;
-    
-    // Find where to insert in free list (keeping address order)
-    Block **insert_ptr = &_firstFreeBlock;
-    while (*insert_ptr != NULL && *insert_ptr < block) {
-        insert_ptr = &(*insert_ptr)->next;
-    }
-    
-    // Insert block into free list
-    block->next = *insert_ptr;
-    *insert_ptr = block;
     
     // Remember original block for next-fit
     Block *original_block = block;
     
-    // Try to merge with next block
+    // First, check if we can merge with next block
     Block *next_block = _getNextBlockBySize(block);
     if (next_block && next_block->next != ALLOCATED_BLOCK_MAGIC) {
-        Block **next_ptr = &block->next;
+        // Remove next block from free list
+        Block **next_ptr = &_firstFreeBlock;
         while (*next_ptr != next_block) {
             next_ptr = &(*next_ptr)->next;
         }
-        block->size += next_block->size;
         *next_ptr = next_block->next;
+        block->size += next_block->size;
     }
     
-    // Try to merge with previous block
+    // Then check if we can merge with previous block
     Block *prev_block = _firstFreeBlock;
     Block **prev_ptr = &_firstFreeBlock;
-    while (prev_block != block) {
+    while (prev_block != NULL) {
         Block *next = _getNextBlockBySize(prev_block);
         if (next == block && prev_block->next != ALLOCATED_BLOCK_MAGIC) {
+            // Merge with previous block
             prev_block->size += block->size;
-            prev_block->next = block->next;
-            
-            // For next-fit: if we merged blocks, update last allocated
-            if (_currentStrategy == ALLOC_NEXTFIT && 
-                (_lastAllocatedBlock == block || _lastAllocatedBlock == next_block)) {
-                _lastAllocatedBlock = original_block;
-            }
-            return;
+            block = prev_block;  // Update block to point to merged block
+            break;
         }
         prev_ptr = &prev_block->next;
         prev_block = *prev_ptr;
     }
     
-    // If we didn't merge with previous, check if we need to update last allocated
+    // If we didn't merge with a previous block, insert the block into free list
+    if (prev_block == NULL) {
+        Block **insert_ptr = &_firstFreeBlock;
+        while (*insert_ptr != NULL && *insert_ptr < block) {
+            insert_ptr = &(*insert_ptr)->next;
+        }
+        block->next = *insert_ptr;
+        *insert_ptr = block;
+    }
+    
+    // Update _lastAllocatedBlock for next-fit
     if (_currentStrategy == ALLOC_NEXTFIT && 
-        (_lastAllocatedBlock == block || _lastAllocatedBlock == next_block)) {
-        _lastAllocatedBlock = original_block;
+        (_lastAllocatedBlock == original_block || 
+         _lastAllocatedBlock == next_block)) {
+        _lastAllocatedBlock = block;
     }
 }
 
